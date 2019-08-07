@@ -126,8 +126,6 @@ static int queue_packet(struct packet_handler_ctx *phc, struct codec_packet *p){
 	unsigned long long ts_diff_us =
 		(unsigned long long) (ts_diff + (phc->sink->jb.rtptime_delta * phc->sink->jb.buffer_len))* 1000000 / clockrate; //phc->sink->encoder_format.clockrate
 	timeval_add_usec(&p->to_send, ts_diff_us);
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
 
 	// how far in the future is this?
 	ts_diff_us = timeval_diff(&p->to_send, &rtpe_now); // negative wrap-around to positive OK
@@ -169,8 +167,6 @@ int buffer_packet(struct packet_handler_ctx *phc) {
                         p->to_send = phc->sink->jb.first_send = rtpe_now;
                         phc->sink->jb.first_send_ts = ts;
                         phc->sink->jb.first_seq = ntohs(phc->mp.rtp->seq_num);
-                        phc->sink->jb.buffer_len = jb_config->min_jb_len;
-                        phc->sink->jb.p = p;
                         phc->sink->jb.call = phc->sink->call;
                 }
                 check_buffered_packets(&phc->sink->jb, get_queue_length(phc->sink->buffer_timer));
