@@ -7,7 +7,7 @@ CFLAGS+=	-std=c99
 CFLAGS+=	$(shell pkg-config --cflags glib-2.0)
 CFLAGS+=	$(shell pkg-config --cflags gthread-2.0)
 CFLAGS+=	$(shell pkg-config --cflags openssl)
-CFLAGS+=	-I. -I../lib/ -I../kernel-module/ -I../include/
+CFLAGS+=	-I. -I../lib/ -I../kernel-module/ -I../include/ -I../lib/
 CFLAGS+=	-D_GNU_SOURCE
 CFLAGS+=	$(shell pkg-config --cflags libpcre)
 ifeq ($(with_transcoding),yes)
@@ -70,7 +70,7 @@ LIBSRCS+=	codeclib.c resample.c socket.c streambuf.c dtmflib.c
 DAEMONSRCS+=	codec.c call.c ice.c kernel.c media_socket.c stun.c bencode.c poller.c \
 		dtls.c recording.c statistics.c rtcp.c redis.c iptables.c graphite.c \
 		cookie_cache.c udp_listener.c homer.c load.c cdr.c dtmf.c timerthread.c \
-		media_player.c
+		jitter_buffer.c media_player.c
 HASHSRCS+=	call_interfaces.c control_ng.c sdp.c
 endif
 
@@ -102,13 +102,13 @@ endif
 	true # override linking recipe from common.Makefile
 
 unit-tests:	$(TESTS)
-	for x in $(TESTS); do echo testing: $$x; G_DEBUG=fatal-warnings ./$$x || exit 1; done
+	for x in $(TESTS); do echo testing: $$x; G_DEBUG=info ./$$x || exit 1; done
 
 daemon-tests:	tests-preload.so
 	$(MAKE) -C ../daemon
 	rm -rf fake-sockets
 	mkdir fake-sockets
-	LD_PRELOAD=../t/tests-preload.so RTPE_BIN=../daemon/rtpengine TEST_SOCKET_PATH=./fake-sockets \
+	LD_PRELOAD=../t/tests-preload.so RTPE_BIN=../daemon/rtpengine TEST_SOCKET_PATH=./fake-sockets\
 		   perl -I../perl auto-daemon-tests.pl
 	test "$$(ls fake-sockets)" = ""
 	rmdir fake-sockets
@@ -128,7 +128,7 @@ transcode-test:	transcode-test.o $(COMMONOBJS) codeclib.o resample.o codec.o ssr
 	rtcp.o redis.o iptables.o graphite.o call_interfaces.strhash.o sdp.strhash.o rtp.o crypto.o \
 	control_ng.strhash.o \
 	streambuf.o cookie_cache.o udp_listener.o homer.o load.o cdr.o dtmf.o timerthread.o \
-	media_player.o dtmflib.o
+	jitter_buffer.o media_player.o dtmflib.o
 
 payload-tracker-test: payload-tracker-test.o $(COMMONOBJS) ssrc.o aux.o auxlib.o rtp.o crypto.o codeclib.o \
 	resample.o dtmflib.o

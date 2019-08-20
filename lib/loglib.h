@@ -28,19 +28,7 @@ void __vpilog(int prio, const char *prefix, const char *fmt, va_list);
 void __ilog_np(int prio, const char *format, ...) __attribute__ ((format (printf, 2, 3)));
 
 
-#ifndef __DEBUG
-#define ilog(prio, fmt, ...)									\
-	do {											\
-		int __loglevel = get_log_level();						\
-		if (LOG_LEVEL_MASK((prio)) > LOG_LEVEL_MASK(__loglevel))			\
-			break;									\
-		if ((__loglevel & LOG_FLAG_RESTORE) && !((prio) & LOG_FLAG_RESTORE))		\
-			break;									\
-		__ilog(prio, fmt, ##__VA_ARGS__);						\
-	} while (0)
-#else
-#define ilog(prio, fmt, ...) __ilog(prio, fmt, ##__VA_ARGS__)
-#endif
+#define ilog(prio, fmt, ...) syslog(prio, fmt, ##__VA_ARGS__)
 
 
 INLINE int get_log_level(void) {
