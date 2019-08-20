@@ -1733,7 +1733,7 @@ static int stream_packet(struct packet_handler_ctx *phc) {
 	// this set payload_type, ssrc_in, ssrc_out and mp
 	media_packet_rtp(phc);
 
-        if(phc->buffered_packet && phc->mp.sfd->call->enable_jb)// && set_jitter_values(&phc->sink->jb, seq))
+        if(phc->buffered_packet && phc->mp.sfd->call->enable_jb)
         {
                 if(set_jitter_values(phc))
 			goto drop;

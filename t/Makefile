@@ -7,7 +7,7 @@ CFLAGS+=	-std=c99
 CFLAGS+=	$(shell pkg-config --cflags glib-2.0)
 CFLAGS+=	$(shell pkg-config --cflags gthread-2.0)
 CFLAGS+=	$(shell pkg-config --cflags openssl)
-CFLAGS+=	-I. -I../lib/ -I../kernel-module/ -I../include/ -I../lib/
+CFLAGS+=	-I. -I../lib/ -I../kernel-module/ -I../include/
 CFLAGS+=	-D_GNU_SOURCE
 CFLAGS+=	$(shell pkg-config --cflags libpcre)
 ifeq ($(with_transcoding),yes)
@@ -102,13 +102,13 @@ endif
 	true # override linking recipe from common.Makefile
 
 unit-tests:	$(TESTS)
-	for x in $(TESTS); do echo testing: $$x; G_DEBUG=info ./$$x || exit 1; done
+	for x in $(TESTS); do echo testing: $$x; G_DEBUG=fatal-warnings ./$$x || exit 1; done
 
 daemon-tests:	tests-preload.so
 	$(MAKE) -C ../daemon
 	rm -rf fake-sockets
 	mkdir fake-sockets
-	LD_PRELOAD=../t/tests-preload.so RTPE_BIN=../daemon/rtpengine TEST_SOCKET_PATH=./fake-sockets\
+	LD_PRELOAD=../t/tests-preload.so RTPE_BIN=../daemon/rtpengine TEST_SOCKET_PATH=./fake-sockets \
 		   perl -I../perl auto-daemon-tests.pl
 	test "$$(ls fake-sockets)" = ""
 	rmdir fake-sockets

@@ -1407,7 +1407,7 @@ static int __packet_decoded(decoder_t *decoder, AVFrame *frame, void *u1, void *
 	struct codec_ssrc_handler *ch = u1;
 	struct media_packet *mp = u2;
 
-	ilog(LOG_DEBUG, "RTP media successfully decoded !!!!!!!!!!!!!!!!: TS %llu, samples %u",
+	ilog(LOG_DEBUG, "RTP media successfully decoded: TS %llu, samples %u",
 			(unsigned long long) frame->pts, frame->nb_samples);
 
 	// switch from input codec context to output context if necessary
