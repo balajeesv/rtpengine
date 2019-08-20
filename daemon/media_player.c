@@ -173,7 +173,14 @@ static int send_timer_send(struct send_timer *st, struct codec_packet *cp) {
 
 	if (!st->sink->selected_sfd)
 		goto out;
-
+       
+        if(cp->packet && cp->packet->buffered)
+        {
+		mutex_unlock(&st->lock);//TODO check and remove
+                play_buffered(st->sink, cp);
+		goto out;
+        }
+         
 	struct rtp_header *rh = (void *) cp->s.s;
 	ilog(LOG_DEBUG, "Forward to sink endpoint: %s%s:%d%s (RTP seq %u TS %u)",
 			FMT_M(sockaddr_print_buf(&st->sink->endpoint.address),
@@ -190,6 +197,20 @@ out:
 	return 0;
 }
 
+static int compare_timeval(const void *a, const void *b, void* data){
+	const struct codec_packet *t1 = a;
+	const struct codec_packet *t2 = b;
+	int ret_val = timeval_cmp(&t1->to_send, &t2->to_send);
+//	if(ret_val == 0)
+//		ret_val = -1;
+//Sort in decending order for faster insert and pop from tail
+	if(ret_val == 1)
+		return -1;
+	if(ret_val == -1)
+		return 1;
+
+	return ret_val;
+}
 
 // st->stream->out_lock (or call->master_lock/W) must be held already
 void send_timer_push(struct send_timer *st, struct codec_packet *cp) {
@@ -210,11 +231,11 @@ void send_timer_push(struct send_timer *st, struct codec_packet *cp) {
 	unsigned int qlen = st->packets.length;
 	// this hands over ownership of cp, so we must copy the timeval out
 	struct timeval tv_send = cp->to_send;
-	g_queue_push_tail(&st->packets, cp);
+	g_queue_insert_sorted(&st->packets, cp, compare_timeval, NULL);
 	mutex_unlock(&st->lock);
 
 	// first packet in? we're probably not scheduled yet
-	if (!qlen)
+	if (!qlen || st->packets.tail->data == cp)
 		timerthread_obj_schedule_abs(&st->tt_obj, &tv_send);
 }
 
@@ -660,10 +681,10 @@ static void send_timer_run(void *ptr) {
 	mutex_lock(&st->lock);
 
 	while (st->packets.length) {
-		struct codec_packet *cp = st->packets.head->data;
+		struct codec_packet *cp = st->packets.tail->data;
 		// XXX this could be made lock-free
 		if (!send_timer_send(st, cp)) {
-			g_queue_pop_head(&st->packets);
+			g_queue_pop_tail(&st->packets);
 			continue;
 		}
 		// couldn't send the last one. remember time to schedule
