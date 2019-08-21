@@ -290,11 +290,8 @@ retry:
 		sigprocmask(SIG_SETMASK, &ss, NULL);
 		closelog();
 
-		for (i = 0; i < 100; i++) {
-			if (i == 2 && rtpe_config.common.log_stderr)
-				continue;
+		for (i = 0; i < 100; i++)
 			close(i);
-		}
 
 		if (!rtpe_config.common.log_stderr) {
 			openlog("rtpengine/child", LOG_PID | LOG_NDELAY, LOG_DAEMON);
@@ -904,8 +901,8 @@ struct packet_stream *__packet_stream_new(struct call *call) {
 	atomic64_set_na(&stream->last_packet, rtpe_now.tv_sec);
 	stream->rtp_stats = g_hash_table_new_full(g_int_hash, g_int_equal, NULL, __rtp_stats_free);
 	recording_init_stream(stream);
-	stream->send_timer = send_timer_new(stream);
-	stream->buffer_timer = send_timer_new(stream);
+	stream->send_timer = send_timer_new(stream, 0);
+	stream->buffer_timer = send_timer_new(stream, 1);
 
 	return stream;
 }

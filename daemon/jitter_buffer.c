@@ -58,6 +58,7 @@ static void reset_jitter_buffer(struct jitter_buffer *jb){
 
         if(jb->num_resets >= 2 && jb->call)
                jb->call->enable_jb = 0;
+
 }
 
 static int get_clock_rate(struct packet_handler_ctx *phc, int payload_type){
@@ -110,6 +111,7 @@ static int queue_packet(struct packet_handler_ctx *phc, struct codec_packet *p){
 	unsigned long ts = ntohl(phc->mp.rtp->timestamp);
 	int payload_type =  (phc->mp.rtp->m_pt & 0x7f);
         int clockrate = get_clock_rate(phc, payload_type);
+        int ret = 0;
 
         if(!clockrate)
         {
@@ -129,17 +131,25 @@ static int queue_packet(struct packet_handler_ctx *phc, struct codec_packet *p){
 
 	// how far in the future is this?
 	ts_diff_us = timeval_diff(&p->to_send, &rtpe_now); // negative wrap-around to positive OK
+ 
+        ilog(LOG_DEBUG, "ts_diff_us = %llu", ts_diff_us);
 
 	if (ts_diff_us > 1000000) // more than one second, can't be right
 		phc->sink->jb.first_send.tv_sec = 0; // fix it up below
-
+         
+        mutex_lock(&phc->sink->out_lock);
 	g_queue_push_tail(&phc->mp.packets_out, p);
-	return media_socket_dequeue(&phc->mp, phc->sink);
+	ret =  media_socket_dequeue(&phc->mp, phc->sink);
+        mutex_unlock(&phc->sink->out_lock);
+        
+        return ret;
+
 }
 
 int buffer_packet(struct packet_handler_ctx *phc) {
         int ret=0;
         char *buffer;
+	ilog(LOG_INFO, "Buffer Packet");
 	buffer = malloc(phc->s.len);
 	memcpy(buffer, phc->s.s, phc->s.len);
 	str_init_len(&phc->s, buffer, phc->s.len);
@@ -154,6 +164,7 @@ int buffer_packet(struct packet_handler_ctx *phc) {
                 mutex_lock(&phc->sink->jb.lock);
                 struct codec_packet *p = get_codec_packet(phc);
                 if (phc->sink->jb.first_send.tv_sec) {
+			mutex_unlock(&phc->sink->jb.lock);
                         queue_packet(phc,p);
                         if(phc->sink->jb.p)
                          {
@@ -167,14 +178,16 @@ int buffer_packet(struct packet_handler_ctx *phc) {
                         p->to_send = phc->sink->jb.first_send = rtpe_now;
                         phc->sink->jb.first_send_ts = ts;
                         phc->sink->jb.first_seq = ntohs(phc->mp.rtp->seq_num);
+			phc->sink->jb.buffer_len = jb_config->min_jb_len;
+			phc->sink->jb.p = p;
                         phc->sink->jb.call = phc->sink->call;
+			mutex_unlock(&phc->sink->jb.lock);
                 }
                 check_buffered_packets(&phc->sink->jb, get_queue_length(phc->sink->buffer_timer));
-                mutex_unlock(&phc->sink->jb.lock);
         }
         else
         {
-               ilog(LOG_INFO, "phc->sink is NULL");
+               ilog(LOG_INFO, "phc->sink is NULL"); //TODO call stream packet
         }
         return ret;
 }
