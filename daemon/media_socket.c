@@ -1739,7 +1739,6 @@ static int stream_packet(struct packet_handler_ctx *phc) {
 			goto drop;
 	}
 
-        ilog(LOG_WARNING, "Balajee JB");
 	/* do we have somewhere to forward it to? */
 
 	if (G_UNLIKELY(!phc->sink || !phc->sink->selected_sfd || !phc->out_srtp
@@ -1886,7 +1885,7 @@ static void stream_fd_readable(int fd, void *p, uintptr_t u) {
 			ret = buffer_packet(&phc);
 		else
 			ret = stream_packet(&phc);
-                
+
 		if (G_UNLIKELY(ret < 0))
 			ilog(LOG_WARNING, "Write error on media socket: %s", strerror(-ret));
 		else if (phc.update)
@@ -1974,4 +1973,5 @@ void play_buffered(struct packet_stream *sink, struct codec_packet *cp)
         stream_packet(&phc);
         free(cp->s.s);
         g_slice_free1(sizeof(*cp->packet), cp->packet);
+        codec_packet_free(cp);
 }

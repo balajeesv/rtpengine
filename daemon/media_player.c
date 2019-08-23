@@ -195,6 +195,7 @@ static int compare_timeval(const void *a, const void *b, void* data){
 	const struct codec_packet *t1 = a;
 	const struct codec_packet *t2 = b;
 	int ret_val = timeval_cmp(&t1->to_send, &t2->to_send);
+        //sorting in descending order for faster insertion
 	if(ret_val == 1)
 		return -1;
 	if(ret_val == -1)
@@ -229,7 +230,7 @@ queue:;
 	g_queue_insert_sorted(&st->packets, cp, compare_timeval, NULL);
 	mutex_unlock(&st->lock);
 
-	// first packet in? we're probably not scheduled yet
+	// first packet in? we're probably not scheduled yet and new packet at tail to schedule sooner
 	if (!qlen || st->packets.tail->data == cp)
 		timerthread_obj_schedule_abs(&st->tt_obj, &tv_send);
 }
@@ -667,13 +668,15 @@ static void handle_buffered_packet(struct send_timer *st, struct timeval *next_s
 	struct call *call = st->call;
 	g_queue_init(&packets);
 
+	ilog(LOG_DEBUG, "handle_buffered_packet");
+
 	rwlock_lock_r(&call->master_lock);
 	mutex_lock(&st->lock);
 
 	while (st->packets.length) {
 		struct codec_packet *cp = st->packets.tail->data;
 		if (cp->to_send.tv_sec && timeval_cmp(&cp->to_send, &rtpe_now) <= 0){
-			g_queue_push_tail(&packets, cp);
+			g_queue_push_tail(&packets, cp); //store in locak GQueue to call lock free
 			g_queue_pop_tail(&st->packets);
 			continue;
 		}

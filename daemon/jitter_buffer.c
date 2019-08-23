@@ -18,7 +18,7 @@ struct jitter_buffer_config {
 void jitter_buffer_init(unsigned int min, unsigned int max) {
         struct jitter_buffer_config *config;
 
-        ilog(LOG_INFO, "jitter_buffer_init");
+        ilog(LOG_DEBUG, "jitter_buffer_init");
 
         if (jb_config)
                 return;
@@ -35,7 +35,7 @@ void jitter_buffer_init(unsigned int min, unsigned int max) {
 }
 
 static void reset_jitter_buffer(struct jitter_buffer *jb){
-        ilog(LOG_INFO, "reset_jitter_buffer");
+        ilog(LOG_DEBUG, "reset_jitter_buffer");
         jb->first_send_ts  	= 0;
         jb->first_send.tv_sec 	= 0;
         jb->first_send.tv_usec 	= 0;
@@ -147,20 +147,22 @@ static int queue_packet(struct packet_handler_ctx *phc, struct codec_packet *p){
 }
 
 int buffer_packet(struct packet_handler_ctx *phc) {
-	int ret=0;
+	int ret=1;
 	char *buffer;
-	ilog(LOG_INFO, "Buffer Packet");
-	buffer = malloc(phc->s.len);
-	memcpy(buffer, phc->s.s, phc->s.len);
-	str_init_len(&phc->s, buffer, phc->s.len);
+	ilog(LOG_DEBUG, "buffer_packet");
 
-	phc->mp.stream = phc->mp.sfd->stream;
-	phc->sink = phc->mp.stream->rtp_sink;
-	phc->mp.media = phc->mp.stream->media;
-	__C_DBG("Handling packet on: %s:%d", sockaddr_print_buf(&phc->mp.stream->endpoint.address),
-			phc->mp.stream->endpoint.port);
 	if(phc->sink)
 	{
+		buffer = malloc(phc->s.len);
+		memcpy(buffer, phc->s.s, phc->s.len);
+		str_init_len(&phc->s, buffer, phc->s.len);
+
+		phc->mp.stream = phc->mp.sfd->stream;
+		phc->sink = phc->mp.stream->rtp_sink;
+		phc->mp.media = phc->mp.stream->media;
+		__C_DBG("Handling packet on: %s:%d", sockaddr_print_buf(&phc->mp.stream->endpoint.address),
+				phc->mp.stream->endpoint.port);
+
 		mutex_lock(&phc->sink->jb.lock);
 		struct codec_packet *p = get_codec_packet(phc);
 		if (phc->sink->jb.first_send.tv_sec) {
@@ -184,10 +186,11 @@ int buffer_packet(struct packet_handler_ctx *phc) {
 			mutex_unlock(&phc->sink->jb.lock);
 		}
 		check_buffered_packets(&phc->sink->jb, get_queue_length(phc->sink->buffer_timer));
+                ret=0;
 	}
 	else
 	{
-		ilog(LOG_INFO, "phc->sink is NULL"); //TODO call stream packet
+		ilog(LOG_DEBUG, "Jitter Buffer sink is NULL");
 	}
 	return ret;
 }
