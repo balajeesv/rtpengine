@@ -285,7 +285,7 @@ struct packet_stream {
 
 	/* in_lock must be held for SETTING these: */
 	volatile unsigned int	ps_flags;
-        struct jitter_buffer    jb;
+  	struct jitter_buffer    jb;
 
 
 };

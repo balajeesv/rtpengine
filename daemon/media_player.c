@@ -160,7 +160,7 @@ struct send_timer *send_timer_new(struct packet_stream *ps, int val) {
 	mutex_init(&st->lock);
 	st->call = obj_get(ps->call);
 	st->sink = ps;
-        st->buffer_timer = val;
+	st->buffer_timer = val;
 	g_queue_init(&st->packets);
 
 	return st;
@@ -673,7 +673,7 @@ static void handle_buffered_packet(struct send_timer *st, struct timeval *next_s
 	while (st->packets.length) {
 		struct codec_packet *cp = st->packets.tail->data;
 		if (cp->to_send.tv_sec && timeval_cmp(&cp->to_send, &rtpe_now) <= 0){
-                        g_queue_push_tail(&packets, cp);
+			g_queue_push_tail(&packets, cp);
 			g_queue_pop_tail(&st->packets);
 			continue;
 		}
@@ -685,10 +685,10 @@ static void handle_buffered_packet(struct send_timer *st, struct timeval *next_s
 	mutex_unlock(&st->lock);
 	rwlock_unlock_r(&call->master_lock);
 
-        //calling lock free
+	//calling lock free
 	while (packets.length) {
 		struct codec_packet *cp = packets.head->data;
-                play_buffered(st->sink, cp);
+		play_buffered(st->sink, cp);
 		g_queue_pop_head(&packets);
 		codec_packet_free(cp);
 	}

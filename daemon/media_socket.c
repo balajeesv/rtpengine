@@ -1661,10 +1661,7 @@ int media_socket_dequeue(struct media_packet *mp, struct packet_stream *sink) {
 	while ((p = g_queue_pop_head(&mp->packets_out)))
         {
 		if(p->packet && p->packet->buffered)
-                {
-                        ilog(LOG_INFO, "media_socket_dequeue buffer_timer");
 			send_timer_push(sink->buffer_timer, p);
-                }
 		else
 			send_timer_push(sink->send_timer, p);
 	}
@@ -1967,7 +1964,6 @@ out:
 
 void play_buffered(struct packet_stream *sink, struct codec_packet *cp)
 {
-	ilog(LOG_DEBUG, "play_buffered");
         struct packet_handler_ctx phc;
         ZERO(phc);
         phc.mp.sfd = cp->packet->sfd;
