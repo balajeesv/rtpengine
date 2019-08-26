@@ -186,7 +186,6 @@ static int send_timer_send(struct send_timer *st, struct codec_packet *cp) {
 
 out:
 	codec_packet_free(cp);
-
 	return 0;
 }
 
@@ -661,8 +660,7 @@ static void media_player_run(void *ptr) {
 }
 #endif
 
-static void handle_buffered_packet(struct send_timer *st, struct timeval *next_send)
-{
+static void handle_buffered_packet(struct send_timer *st, struct timeval *next_send) {
 	GQueue packets;
 	struct call *call = st->call;
 	g_queue_init(&packets);
@@ -692,7 +690,6 @@ static void handle_buffered_packet(struct send_timer *st, struct timeval *next_s
 		struct codec_packet *cp = packets.head->data;
 		play_buffered(st->sink, cp);
 		g_queue_pop_head(&packets);
-		codec_packet_free(cp);
 	}
 }
 
@@ -707,8 +704,7 @@ static void send_timer_run(void *ptr) {
 	struct timeval next_send = {0,};
 
 
-        if(st->buffer_timer)
-        {
+        if(st->buffer_timer) {
             handle_buffered_packet(st, &next_send);
             goto end;
         }

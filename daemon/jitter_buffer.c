@@ -40,7 +40,7 @@ void jitter_buffer_init(unsigned int min, unsigned int max) {
         return;
 }
 
-static void reset_jitter_buffer(struct jitter_buffer *jb){
+static void reset_jitter_buffer(struct jitter_buffer *jb) {
         ilog(LOG_DEBUG, "reset_jitter_buffer");
 
 	mutex_lock(&jb->lock);
@@ -56,10 +56,10 @@ static void reset_jitter_buffer(struct jitter_buffer *jb){
         jb->clock_rate    	= 0;
         jb->payload_type  	= 0;
 
-	if(jb->p)
-	{
+	if(jb->p) {
 		free(jb->p->s.s);
 		codec_packet_free(jb->p);
+		jb->p = NULL;
 	}
 
 	jb->num_resets++;
@@ -67,27 +67,27 @@ static void reset_jitter_buffer(struct jitter_buffer *jb){
         //disable jitter buffer in case of 2 or more resets
 	if(jb->num_resets >= 2 && jb->call)
 		jb->call->enable_jb = 0;
+
 	mutex_unlock(&jb->lock);
 
 }
 
-static int get_clock_rate(struct packet_handler_ctx *phc, int payload_type){
+static int get_clock_rate(struct packet_handler_ctx *phc, int payload_type) {
 	const struct rtp_payload_type *rtp_pt = NULL;
 	int clock_rate = 0;
+
 	if(phc->sink->jb.clock_rate && phc->sink->jb.payload_type == payload_type)
-	{
 		return phc->sink->jb.clock_rate;
-	}
+
 	struct codec_handler *transcoder = codec_handler_get(phc->mp.media, payload_type);
-	if(transcoder)
-	{
+	if(transcoder) {
 		if(transcoder->source_pt.payload_type == payload_type)
 			rtp_pt = &transcoder->source_pt;
 		if(transcoder->dest_pt.payload_type == payload_type)
 			rtp_pt = &transcoder->dest_pt;
 	}
-	if(rtp_pt)
-	{
+
+	if(rtp_pt) {
 		clock_rate = phc->sink->jb.clock_rate = rtp_pt->clock_rate;
 		phc->sink->jb.payload_type = payload_type;
 	}
@@ -97,7 +97,7 @@ static int get_clock_rate(struct packet_handler_ctx *phc, int payload_type){
 	return clock_rate;
 }
 
-static struct codec_packet* get_codec_packet(struct packet_handler_ctx *phc){
+static struct codec_packet* get_codec_packet(struct packet_handler_ctx *phc) {
 	struct codec_packet *p = g_slice_alloc0(sizeof(*p));
 	p->s = phc->s;
 	p->packet = g_slice_alloc0(sizeof(*p->packet));
@@ -110,12 +110,12 @@ static struct codec_packet* get_codec_packet(struct packet_handler_ctx *phc){
 	return p;
 }
 
-static void check_buffered_packets(struct jitter_buffer *jb, unsigned int len){
+static void check_buffered_packets(struct jitter_buffer *jb, unsigned int len) {
 	if(len >= (2* jb_config->max_jb_len))
 		reset_jitter_buffer(jb);
 }
 
-static int queue_packet(struct packet_handler_ctx *phc, struct codec_packet *p){
+static int queue_packet(struct packet_handler_ctx *phc, struct codec_packet *p) {
 
 	rtp_payload(&phc->mp.rtp, &phc->mp.payload, &p->s);
 	unsigned long ts = ntohl(phc->mp.rtp->timestamp);
@@ -123,14 +123,12 @@ static int queue_packet(struct packet_handler_ctx *phc, struct codec_packet *p){
 	int clockrate = get_clock_rate(phc, payload_type);
 	int ret = 0;
 
-	if(!clockrate)
-	{
+	if(!clockrate) {
 		reset_jitter_buffer(&phc->sink->jb);
 		return 1;
 	}
 	uint32_t ts_diff = (uint32_t) ts - (uint32_t) phc->sink->jb.first_send_ts; // allow for wrap-around
-	if(!phc->sink->jb.rtptime_delta)
-	{
+	if(!phc->sink->jb.rtptime_delta) {
 		int seq_diff = ntohs(phc->mp.rtp->seq_num) - phc->sink->jb.first_seq;
 		phc->sink->jb.rtptime_delta = ts_diff/seq_diff;
 	}
@@ -166,10 +164,10 @@ int buffer_packet(struct packet_handler_ctx *phc) {
 	phc->mp.media = phc->mp.stream->media;
 	phc->mp.call = phc->mp.sfd->call;
 
-	if(phc->sink)
-	{
+	if(phc->sink) {
 		__C_DBG("Handling packet on: %s:%d", sockaddr_print_buf(&phc->mp.stream->endpoint.address),
 				phc->mp.stream->endpoint.port);
+		ret=0;
 		rwlock_lock_r(&phc->mp.call->master_lock);
 		mutex_lock(&phc->sink->jb.lock);
 		buffer = malloc(phc->s.len);
@@ -179,10 +177,9 @@ int buffer_packet(struct packet_handler_ctx *phc) {
 		struct codec_packet *p = get_codec_packet(phc);
 		if (phc->sink->jb.first_send.tv_sec) {
 			mutex_unlock(&phc->sink->jb.lock);
-			queue_packet(phc,p);
-			if(phc->sink->jb.p)
-			{
-                                // push first packet into buffer
+			ret = queue_packet(phc,p);
+			if(!ret && phc->sink->jb.p) {
+                                // push first packet into jitter buffer
 				queue_packet(phc,phc->sink->jb.p);
 				phc->sink->jb.p = NULL;
 			}
@@ -191,6 +188,21 @@ int buffer_packet(struct packet_handler_ctx *phc) {
                         // store data from first packet and use for successive packets and queue the first packet
 			rtp_payload(&phc->mp.rtp, &phc->mp.payload, &p->s);
 			unsigned long ts = ntohl(phc->mp.rtp->timestamp);
+			int payload_type =  (phc->mp.rtp->m_pt & 0x7f);
+			int clockrate = get_clock_rate(phc, payload_type);
+			if(!clockrate){
+				phc->sink->jb.initial_pkts++;
+				if(phc->sink->jb.initial_pkts > 20) {      //Ignore initial Payload Type 126 if any
+					reset_jitter_buffer(&phc->sink->jb);
+					ret = 1;
+				}
+				mutex_unlock(&phc->sink->jb.lock);
+				rwlock_unlock_r(&phc->mp.call->master_lock);
+				p->packet->buffered = 0;
+				play_buffered(phc->sink, p);
+				goto end;
+			}
+
 			p->to_send = phc->sink->jb.first_send = rtpe_now;
 			phc->sink->jb.first_send_ts = ts;
 			phc->sink->jb.first_seq = ntohs(phc->mp.rtp->seq_num);
@@ -200,38 +212,32 @@ int buffer_packet(struct packet_handler_ctx *phc) {
 			mutex_unlock(&phc->sink->jb.lock);
 		}
 		check_buffered_packets(&phc->sink->jb, get_queue_length(phc->sink->buffer_timer));
-                ret=0;
 		rwlock_unlock_r(&phc->mp.call->master_lock);
 	}
 	else
-	{
 		ilog(LOG_DEBUG, "Jitter Buffer sink is NULL");
-	}
+
+end:
 	return ret;
 }
 
-static void increment_buffer(unsigned int* buffer_len)
-{
+static void increment_buffer(unsigned int* buffer_len) {
 	if(*buffer_len < jb_config->max_jb_len)
 		(*buffer_len)++;
 }
 
-static void decrement_buffer(unsigned int *buffer_len)
-{
+static void decrement_buffer(unsigned int *buffer_len) {
 	if(*buffer_len > jb_config->min_jb_len)
 		(*buffer_len)--;
 }
 
-int set_jitter_values(struct packet_handler_ctx *phc)
-{
+int set_jitter_values(struct packet_handler_ctx *phc) {
 	int ret=0;
 	int curr_seq = ntohs(phc->mp.rtp->seq_num); 
 	struct jitter_buffer *jb = &phc->sink->jb;
-	if(jb->next_exp_seq)
-	{
+	if(jb->next_exp_seq) {
 		mutex_lock(&jb->lock);
-		if(curr_seq > jb->next_exp_seq)
-		{
+		if(curr_seq > jb->next_exp_seq) {
 			ilog(LOG_DEBUG, "missing seq exp seq =%d, received seq= %d", jb->next_exp_seq, curr_seq);
 			increment_buffer(&jb->buffer_len);
 			jb->cont_frames = 0;
@@ -241,12 +247,10 @@ int set_jitter_values(struct packet_handler_ctx *phc)
 		}
 		else if(curr_seq < jb->next_exp_seq) //Might be duplicate or sequence already crossed
 			ret=1;
-		else
-		{
+		else {
 			jb->cont_frames++;
 			jb->cont_miss = 0;
-			if(jb->cont_frames >= CONT_SEQ_COUNT)
-			{
+			if(jb->cont_frames >= CONT_SEQ_COUNT) {
 				decrement_buffer(&jb->buffer_len);
 				jb->cont_frames = 0;
 				ilog(LOG_DEBUG, "Received continous frames Buffer len=%d", jb->buffer_len);
@@ -259,8 +263,7 @@ int set_jitter_values(struct packet_handler_ctx *phc)
 	return ret;
 }
 
-void play_buffered(struct packet_stream *sink, struct codec_packet *cp)
-{
+void play_buffered(struct packet_stream *sink, struct codec_packet *cp) {
         struct packet_handler_ctx phc;
         ZERO(phc);
         phc.mp.sfd = cp->packet->sfd;
@@ -271,4 +274,5 @@ void play_buffered(struct packet_stream *sink, struct codec_packet *cp)
         stream_packet(&phc);
         free(cp->s.s);
         g_slice_free1(sizeof(*cp->packet), cp->packet);
+        codec_packet_free(cp);
 }

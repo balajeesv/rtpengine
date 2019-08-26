@@ -27,6 +27,7 @@ struct jitter_buffer{
 	unsigned int            clock_rate;
 	unsigned int            payload_type;
 	unsigned int            num_resets;
+	unsigned int            initial_pkts;
 	struct codec_packet 	*p;
 	struct call             *call;
 };

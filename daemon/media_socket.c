@@ -1655,7 +1655,7 @@ out:
 }
 
 
-/ / appropriate locks must be held
+// appropriate locks must be held
 int media_socket_dequeue(struct media_packet *mp, struct packet_stream *sink) {
 	struct codec_packet *p;
 	while ((p = g_queue_pop_head(&mp->packets_out)))
@@ -1728,8 +1728,7 @@ int stream_packet(struct packet_handler_ctx *phc) {
 	// this set payload_type, ssrc_in, ssrc_out and mp
 	media_packet_rtp(phc);
 
-        if(phc->buffered_packet && phc->mp.sfd->call->enable_jb)
-        {
+        if(phc->buffered_packet && phc->mp.sfd->call->enable_jb) {
                 if(set_jitter_values(phc))
 			goto drop;
 	}
