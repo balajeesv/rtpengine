@@ -189,11 +189,11 @@ out:
 	return 0;
 }
 
-static int compare_timeval(const void *a, const void *b, void* data){
+static int compare_timeval(const void *a, const void *b, void* data) {
 	const struct codec_packet *t1 = a;
 	const struct codec_packet *t2 = b;
 	int ret_val = timeval_cmp(&t1->to_send, &t2->to_send);
-        //sorting in descending order for faster insertion
+        //sorting in descending order for faster insertion and read from tail
 	if(ret_val == 1)
 		return -1;
 	if(ret_val == -1)
@@ -225,6 +225,7 @@ queue:;
 	unsigned int qlen = st->packets.length;
 	// this hands over ownership of cp, so we must copy the timeval out
 	struct timeval tv_send = cp->to_send;
+        //sorted based on delivery time
 	g_queue_insert_sorted(&st->packets, cp, compare_timeval, NULL);
 	mutex_unlock(&st->lock);
 
@@ -661,6 +662,7 @@ static void media_player_run(void *ptr) {
 #endif
 
 static void handle_buffered_packet(struct send_timer *st, struct timeval *next_send) {
+        //local queue
 	GQueue packets;
 	struct call *call = st->call;
 	g_queue_init(&packets);

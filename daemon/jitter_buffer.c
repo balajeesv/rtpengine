@@ -104,7 +104,7 @@ static struct codec_packet* get_codec_packet(struct packet_handler_ctx *phc) {
 	p->packet->sfd = phc->mp.sfd;
 	p->packet->fsin = phc->mp.fsin;
 	p->packet->tv = phc->mp.tv;
-	p->free_func = NULL; // TODO check free
+	p->free_func = free;
 	p->packet->buffered =1;
 
 	return p;
@@ -125,6 +125,8 @@ static int queue_packet(struct packet_handler_ctx *phc, struct codec_packet *p) 
 
 	if(!clockrate) {
 		reset_jitter_buffer(&phc->sink->jb);
+		p->packet->buffered = 0;
+		play_buffered(phc->sink, p);
 		return 1;
 	}
 	uint32_t ts_diff = (uint32_t) ts - (uint32_t) phc->sink->jb.first_send_ts; // allow for wrap-around
@@ -272,7 +274,6 @@ void play_buffered(struct packet_stream *sink, struct codec_packet *cp) {
         phc.s = cp->s;
         phc.buffered_packet = 1;
         stream_packet(&phc);
-        free(cp->s.s);
         g_slice_free1(sizeof(*cp->packet), cp->packet);
         codec_packet_free(cp);
 }
