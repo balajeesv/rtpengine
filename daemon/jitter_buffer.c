@@ -29,6 +29,12 @@ void jitter_buffer_init(unsigned int min, unsigned int max) {
         config->max_jb_len = max;
         config->enable_jb  = 1;
 
+	if(config->min_jb_len <= 0)
+		config->min_jb_len=1;
+
+	if(config->max_jb_len <= 0)
+		config->max_jb_len=1;
+
         jb_config = config;
 
         return;
@@ -36,6 +42,8 @@ void jitter_buffer_init(unsigned int min, unsigned int max) {
 
 static void reset_jitter_buffer(struct jitter_buffer *jb){
         ilog(LOG_DEBUG, "reset_jitter_buffer");
+
+	mutex_lock(&jb->lock);
         jb->first_send_ts  	= 0;
         jb->first_send.tv_sec 	= 0;
         jb->first_send.tv_usec 	= 0;
@@ -56,8 +64,10 @@ static void reset_jitter_buffer(struct jitter_buffer *jb){
 
 	jb->num_resets++;
 
+        //disable jitter buffer in case of 2 or more resets
 	if(jb->num_resets >= 2 && jb->call)
 		jb->call->enable_jb = 0;
+	mutex_unlock(&jb->lock);
 
 }
 
@@ -154,11 +164,13 @@ int buffer_packet(struct packet_handler_ctx *phc) {
 	phc->mp.stream = phc->mp.sfd->stream;
 	phc->sink = phc->mp.stream->rtp_sink;
 	phc->mp.media = phc->mp.stream->media;
+	phc->mp.call = phc->mp.sfd->call;
 
 	if(phc->sink)
 	{
 		__C_DBG("Handling packet on: %s:%d", sockaddr_print_buf(&phc->mp.stream->endpoint.address),
 				phc->mp.stream->endpoint.port);
+		rwlock_lock_r(&phc->mp.call->master_lock);
 		mutex_lock(&phc->sink->jb.lock);
 		buffer = malloc(phc->s.len);
 		memcpy(buffer, phc->s.s, phc->s.len);
@@ -170,11 +182,13 @@ int buffer_packet(struct packet_handler_ctx *phc) {
 			queue_packet(phc,p);
 			if(phc->sink->jb.p)
 			{
+                                // push first packet into buffer
 				queue_packet(phc,phc->sink->jb.p);
 				phc->sink->jb.p = NULL;
 			}
 		}
 		else {
+                        // store data from first packet and use for successive packets and queue the first packet
 			rtp_payload(&phc->mp.rtp, &phc->mp.payload, &p->s);
 			unsigned long ts = ntohl(phc->mp.rtp->timestamp);
 			p->to_send = phc->sink->jb.first_send = rtpe_now;
@@ -187,6 +201,7 @@ int buffer_packet(struct packet_handler_ctx *phc) {
 		}
 		check_buffered_packets(&phc->sink->jb, get_queue_length(phc->sink->buffer_timer));
                 ret=0;
+		rwlock_unlock_r(&phc->mp.call->master_lock);
 	}
 	else
 	{
