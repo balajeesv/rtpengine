@@ -1670,7 +1670,7 @@ int media_socket_dequeue(struct media_packet *mp, struct packet_stream *sink) {
 
 
 /* called lock-free */
-static int stream_packet(struct packet_handler_ctx *phc) {
+int stream_packet(struct packet_handler_ctx *phc) {
 /**
  * Incoming packets:
  * - sfd->socket.local: the local IP/port on which the packet arrived
@@ -1957,21 +1957,4 @@ const struct transport_protocol *transport_protocol(const str *s) {
 
 out:
 	return NULL;
-}
-
-
-
-void play_buffered(struct packet_stream *sink, struct codec_packet *cp)
-{
-        struct packet_handler_ctx phc;
-        ZERO(phc);
-        phc.mp.sfd = cp->packet->sfd;
-        phc.mp.fsin = cp->packet->fsin;
-        phc.mp.tv = cp->packet->tv;
-        phc.s = cp->s;
-        phc.buffered_packet = 1;
-        stream_packet(&phc);
-        free(cp->s.s);
-        g_slice_free1(sizeof(*cp->packet), cp->packet);
-        codec_packet_free(cp);
 }
