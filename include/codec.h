@@ -46,7 +46,7 @@ struct codec_packet {
 	void *source; // opaque
 	void (*free_func)(void *);
 	struct timeval to_send;
-        struct jb_packet* packet;
+	struct jb_packet* packet;
 };
 
 

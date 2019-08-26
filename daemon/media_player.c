@@ -174,7 +174,6 @@ static int send_timer_send(struct send_timer *st, struct codec_packet *cp) {
 
 	if (!st->sink->selected_sfd)
 		goto out;
-       
 	struct rtp_header *rh = (void *) cp->s.s;
 	ilog(LOG_DEBUG, "Forward to sink endpoint: %s%s:%d%s (RTP seq %u TS %u)",
 			FMT_M(sockaddr_print_buf(&st->sink->endpoint.address),
@@ -676,11 +675,11 @@ static void handle_buffered_packet(struct send_timer *st, struct timeval *next_s
 	while (st->packets.length) {
 		struct codec_packet *cp = st->packets.tail->data;
 		if (cp->to_send.tv_sec && timeval_cmp(&cp->to_send, &rtpe_now) <= 0){
-			g_queue_push_tail(&packets, cp); //store in locak GQueue to call lock free
+			g_queue_push_tail(&packets, cp); //store in local GQueue to call lock free
 			g_queue_pop_tail(&st->packets);
 			continue;
 		}
-		// couldn't send the last one. remember time to schedule
+		// couldn't play the last one. remember time to schedule
 		*next_send = cp->to_send;
 		break;
 	}

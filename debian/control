@@ -13,6 +13,7 @@ Build-Depends:
  libavfilter-dev (>= 6:10),
  libavformat-dev (>= 6:10),
  libavutil-dev (>= 6:10),
+ libbcg729-dev <!pkg.ngcp-rtpengine.nobcg729>,
  libbencode-perl,
  libcrypt-openssl-rsa-perl,
  libcrypt-rijndael-perl,

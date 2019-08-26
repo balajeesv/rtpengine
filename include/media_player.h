@@ -67,7 +67,7 @@ struct send_timer {
 	struct call *call; // main reference that keeps this alive
 	struct packet_stream *sink;
 	GQueue packets;
-        int buffer_timer; //set to 1 for buffer timer
+	int buffer_timer; //set to 1 for buffer timer
 };
 
 INLINE unsigned int  get_queue_length(struct send_timer* st) {
