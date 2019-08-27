@@ -5,17 +5,18 @@
 
 #define CONT_SEQ_COUNT 0x64
 #define CONT_MISS_COUNT 0x0A
+#define INITIAL_PACKETS 0x1E
 
 
 static struct jitter_buffer_config *jb_config; 
 
 struct jitter_buffer_config {
-        unsigned int    min_jb_len;
-        unsigned int    max_jb_len;
-        int             enable_jb;
+        int    min_jb_len;
+        int    max_jb_len;
+        int    enable_jb;
 };
 
-void jitter_buffer_init(unsigned int min, unsigned int max) {
+void jitter_buffer_init(int min, int max) {
         struct jitter_buffer_config *config;
 
         ilog(LOG_DEBUG, "jitter_buffer_init");
@@ -57,7 +58,7 @@ static void reset_jitter_buffer(struct jitter_buffer *jb) {
         jb->payload_type  	= 0;
 
 	if(jb->p) {
-		free(jb->p->s.s);
+		g_slice_free1(sizeof(*jb->p->packet), jb->p->packet);
 		codec_packet_free(jb->p);
 		jb->p = NULL;
 	}
@@ -136,13 +137,12 @@ static int queue_packet(struct packet_handler_ctx *phc, struct codec_packet *p) 
 	}
 	p->to_send = phc->sink->jb.first_send;
 	unsigned long long ts_diff_us =
-		(unsigned long long) (ts_diff + (phc->sink->jb.rtptime_delta * phc->sink->jb.buffer_len))* 1000000 / clockrate; //phc->sink->encoder_format.clockrate
+		(unsigned long long) (ts_diff + (phc->sink->jb.rtptime_delta * phc->sink->jb.buffer_len))* 1000000 / clockrate;
+
 	timeval_add_usec(&p->to_send, ts_diff_us);
 
 	// how far in the future is this?
 	ts_diff_us = timeval_diff(&p->to_send, &rtpe_now); // negative wrap-around to positive OK
-
-	ilog(LOG_DEBUG, "ts_diff_us = %llu", ts_diff_us);
 
 	if (ts_diff_us > 1000000) // more than one second, can't be right
 		phc->sink->jb.first_send.tv_sec = 0; // fix it up below
@@ -159,7 +159,6 @@ static int queue_packet(struct packet_handler_ctx *phc, struct codec_packet *p) 
 int buffer_packet(struct packet_handler_ctx *phc) {
 	int ret=1;
 	char *buffer;
-	ilog(LOG_DEBUG, "buffer_packet");
 
 	phc->mp.stream = phc->mp.sfd->stream;
 	phc->sink = phc->mp.stream->rtp_sink;
@@ -194,7 +193,7 @@ int buffer_packet(struct packet_handler_ctx *phc) {
 			int clockrate = get_clock_rate(phc, payload_type);
 			if(!clockrate){
 				phc->sink->jb.initial_pkts++;
-				if(phc->sink->jb.initial_pkts > 20) {      //Ignore initial Payload Type 126 if any
+				if(phc->sink->jb.initial_pkts > INITIAL_PACKETS) {      //Ignore initial Payload Type 126 if any
 					reset_jitter_buffer(&phc->sink->jb);
 					ret = 1;
 				}
@@ -223,12 +222,12 @@ end:
 	return ret;
 }
 
-static void increment_buffer(unsigned int* buffer_len) {
+static void increment_buffer(int* buffer_len) {
 	if(*buffer_len < jb_config->max_jb_len)
 		(*buffer_len)++;
 }
 
-static void decrement_buffer(unsigned int *buffer_len) {
+static void decrement_buffer(int *buffer_len) {
 	if(*buffer_len > jb_config->min_jb_len)
 		(*buffer_len)--;
 }
