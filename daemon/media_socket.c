@@ -46,6 +46,26 @@ struct intf_rr {
 	GQueue logical_intfs;
 	struct logical_intf *singular; // set iff only one is present in the list - no lock needed
 };
+struct packet_handler_ctx {
+        // inputs:
+        str s; // raw input packet
+
+        struct packet_stream *sink; // where to send output packets to (forward destination)
+        rewrite_func decrypt_func, encrypt_func; // handlers for decrypt/encrypt
+        rtcp_filter_func *rtcp_filter;
+        struct packet_stream *in_srtp, *out_srtp; // SRTP contexts for decrypt/encrypt (relevant for muxed RTCP)
+        int payload_type; // -1 if unknown or not RTP
+        int rtcp; // true if this is an RTCP packet
+
+        // verdicts:
+        int update; // true if Redis info needs to be updated
+        int unkernelize; // true if stream ought to be removed from kernel
+        int kernelize; // true if stream can be kernelized
+
+        // output:
+        struct media_packet mp; // passed to handlers
+        int buffered_packet;
+};
 
 
 static void __determine_handler(struct packet_stream *in, const struct packet_stream *out);
@@ -1665,7 +1685,7 @@ int media_socket_dequeue(struct media_packet *mp, struct packet_stream *sink) {
 
 
 /* called lock-free */
-int stream_packet(struct packet_handler_ctx *phc) {
+static int stream_packet(struct packet_handler_ctx *phc) {
 /**
  * Incoming packets:
  * - sfd->socket.local: the local IP/port on which the packet arrived
@@ -1728,8 +1748,8 @@ int stream_packet(struct packet_handler_ctx *phc) {
 	// this set payload_type, ssrc_in, ssrc_out and mp
 	media_packet_rtp(phc);
 
-        if(phc->buffered_packet && phc->mp.sfd->call->enable_jb) {
-                if(set_jitter_values(phc))
+        if(phc->buffered_packet) {
+                if(set_jitter_values(&phc->mp) || !phc->mp.sfd->call->enable_jb)
 			goto drop;
 	}
 
@@ -1876,7 +1896,7 @@ static void stream_fd_readable(int fd, void *p, uintptr_t u) {
 
 		str_init_len(&phc.s, buf + RTP_BUFFER_HEAD_ROOM, ret);
 		if(!PS_ISSET(phc.mp.sfd->stream, RTCP) && phc.mp.sfd->call->enable_jb)
-			ret = buffer_packet(&phc);
+			ret = buffer_packet(&phc.mp, &phc.s);
 		else
 			ret = stream_packet(&phc);
 
@@ -1951,4 +1971,17 @@ const struct transport_protocol *transport_protocol(const str *s) {
 
 out:
 	return NULL;
+}
+
+void play_buffered(struct packet_stream *sink, struct codec_packet *cp) {
+        struct packet_handler_ctx phc;
+        ZERO(phc);
+        phc.mp.sfd = cp->packet->sfd;
+        phc.mp.fsin = cp->packet->fsin;
+        phc.mp.tv = cp->packet->tv;
+        phc.s = cp->s;
+        phc.buffered_packet = 1;
+        stream_packet(&phc);
+        g_slice_free1(sizeof(*cp->packet), cp->packet);
+        codec_packet_free(cp);
 }

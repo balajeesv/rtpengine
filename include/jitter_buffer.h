@@ -6,6 +6,7 @@
 
 struct packet_handler_ctx;
 struct codec_packet;
+struct media_packet;
 
 struct jb_packet {
 	endpoint_t fsin; // source address of received packet
@@ -18,7 +19,6 @@ struct jitter_buffer {
 	mutex_t        		lock;
 	unsigned long 		first_send_ts;
 	struct timeval 		first_send;
-	int            		buffer_len;
 	unsigned int            first_seq;
 	unsigned int            rtptime_delta;
 	unsigned int            next_exp_seq;
@@ -28,15 +28,19 @@ struct jitter_buffer {
 	unsigned int            payload_type;
 	unsigned int            num_resets;
 	unsigned int            initial_pkts;
+	unsigned int            cont_buff_err;
+	int            		buffer_len;
+	int                     clock_drift_val;
+	int                     clock_drift_enable; //flag for buffer overflow underflow
+	int                     buf_decremented;
 	struct codec_packet 	*p;
 	struct call             *call;
 };
 
 void jitter_buffer_init(int min, int max);
 
-int buffer_packet(struct packet_handler_ctx *);
+int buffer_packet(struct media_packet *mp, str *s);
 
-int set_jitter_values(struct packet_handler_ctx *phc);
+int set_jitter_values(struct media_packet *mp);
 
-void play_buffered(struct packet_stream *sink, struct codec_packet *cp); 
 #endif
