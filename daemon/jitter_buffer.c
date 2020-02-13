@@ -201,9 +201,11 @@ int buffer_packet(struct media_packet *mp, const str *s) {
 
 	mutex_lock(&jb->lock);
 
-	if(jb->clock_rate && jb->payload_type != payload_type) { //reset in case of payload change
+	if((jb->clock_rate && jb->payload_type != payload_type) ||
+			(jb->first_send.tv_sec && jb->ssrc != ntohl(mp->rtp->ssrc))) { //reset in case of payload change or ssrc change
 		jb->first_send.tv_sec = 0;
 		jb->rtptime_delta = 0;
+		jb->next_exp_seq = 0;
 	}
 
 	if (jb->first_send.tv_sec) {
@@ -227,6 +229,7 @@ int buffer_packet(struct media_packet *mp, const str *s) {
 		p->ttq_entry.when = jb->first_send = rtpe_now;
 		jb->first_send_ts = ts;
 		jb->first_seq = ntohs(mp->rtp->seq_num);
+		jb->ssrc = ntohl(mp->rtp->ssrc);
 	}
 
 	// packet consumed?
