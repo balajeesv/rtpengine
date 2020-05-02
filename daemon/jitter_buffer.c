@@ -10,8 +10,8 @@
 #define INITIAL_PACKETS 0x1E
 #define CONT_SEQ_COUNT 0x1F4
 #define CONT_MISS_COUNT 0x0A
-#define CLOCK_DRIFT_MULT 0x14
-#define ONE_MS 0x64
+#define CLOCK_DRIFT_MULT 0x0A
+#define DTMF_MULT_CONST 0x64
 
 
 static struct timerthread jitter_buffer_thread;
@@ -44,7 +44,7 @@ static void reset_jitter_buffer(struct jitter_buffer *jb) {
 	jb->num_resets++;
 
 	//disable jitter buffer in case of more than 2 resets
-	if(jb->num_resets > 2 && jb->call)
+	if(jb->num_resets >= 2 && jb->call)
 		jb->disabled = 1;
 }
 
@@ -122,7 +122,7 @@ static int queue_packet(struct media_packet *mp, struct jb_packet *p) {
 	int clockrate = get_clock_rate(mp, payload_type);
 
 	if(!clockrate || !jb->first_send.tv_sec) {
-		ilog(LOG_DEBUG, "Jitter reset due to clockrate");
+		ilog(LOG_DEBUG, "Jitter reset due to clocrate, payloadtype=%d", payload_type);
 		reset_jitter_buffer(jb);
 		return 1;
 	}
@@ -136,7 +136,7 @@ static int queue_packet(struct media_packet *mp, struct jb_packet *p) {
 		(long long) (ts_diff + (jb->rtptime_delta * jb->buffer_len))* 1000000 / clockrate;
 
 	ts_diff_us += (jb->clock_drift_val * seq_diff); 
-	ts_diff_us += (jb->dtmf_mult_factor * ONE_MS);
+	ts_diff_us += (jb->dtmf_mult_factor * DTMF_MULT_CONST);
 
 	if(jb->buf_decremented) {
 		ts_diff_us += 5000; //add 5ms delta when 2 packets are scheduled around same time
@@ -146,10 +146,11 @@ static int queue_packet(struct media_packet *mp, struct jb_packet *p) {
 
 	ts_diff_us = timeval_diff(&p->ttq_entry.when, &rtpe_now);
 
-	if (ts_diff_us > 1000000) { // more than one second, can't be right
-		ilog(LOG_DEBUG, "Partial reset due to timestamp");
+	int ptime = jb->rtptime_delta * 1000000 / clockrate;
+
+	if (ts_diff_us > (ptime * (jb->buffer_len + 2))) {
 		jb->first_send.tv_sec = 0;
-		return 1;
+		p->ttq_entry.when = rtpe_now;
 	}
 
 	timerthread_queue_push(&jb->ttq, &p->ttq_entry);
@@ -199,6 +200,11 @@ int buffer_packet(struct media_packet *mp, const str *s) {
 	if (!jb || jb->disabled || PS_ISSET(mp->sfd->stream, RTCP))
 		goto end;
 
+	if(jb->initial_pkts < INITIAL_PACKETS) { //Ignore initial Payload Type 126 if any
+		jb->initial_pkts++;
+		goto end;
+	}
+
 	p = get_jb_packet(mp, s);
 	if (!p)
 		goto end;
@@ -208,21 +214,31 @@ int buffer_packet(struct media_packet *mp, const str *s) {
 
 	mp = &p->mp;
 
-	int payload_type = (mp->rtp->m_pt & 0x7f);
-
 	mutex_lock(&jb->lock);
 
-	if((jb->clock_rate && jb->payload_type != payload_type) ||
-			(jb->first_send.tv_sec && jb->ssrc != ntohl(mp->rtp->ssrc))) { //reset in case of payload change or ssrc change
-		const struct rtp_payload_type *rtp_pt = get_rtp_payload_type(mp, payload_type);
-		if(rtp_pt) {
-			if(rtp_pt->codec_def && !rtp_pt->codec_def->dtmf)
+	int payload_type = (mp->rtp->m_pt & 0x7f);
+	int marker = (mp->rtp->m_pt & 0x80) ? 1 : 0;
+	int dtmf = 0;
+	const struct rtp_payload_type *rtp_pt = get_rtp_payload_type(mp, payload_type);
+	if(rtp_pt) {
+		if(rtp_pt->codec_def && rtp_pt->codec_def->dtmf)
+			dtmf = 1;
+	}
+
+	if(marker || (jb->ssrc != ntohl(mp->rtp->ssrc))) {
+		jb->first_send.tv_sec =  0;
+        }
+
+	if(jb->clock_rate && jb->payload_type != payload_type) { //reset in case of payload change
+			if(!dtmf)
 				jb->first_send.tv_sec = 0;
-			if(rtp_pt->codec_def->dtmf)
-				jb->dtmf_mult_factor++;
 			else
-				jb->dtmf_mult_factor=0;
-		}
+				jb->dtmf_mult_factor++;
+	}
+
+        if(!dtmf && jb->dtmf_mult_factor) { //reset after DTMF ends
+		jb->first_send.tv_sec = 0;
+		jb->dtmf_mult_factor=0;
 	}
 
 	if (jb->first_send.tv_sec) {
@@ -236,8 +252,8 @@ int buffer_packet(struct media_packet *mp, const str *s) {
 		int payload_type =  (mp->rtp->m_pt & 0x7f);
 		int clockrate = get_clock_rate(mp, payload_type);
 		if(!clockrate){
-			jb->initial_pkts++;
-			if(jb->initial_pkts > INITIAL_PACKETS) {      //Ignore initial Payload Type 126 if any
+			if(jb->rtptime_delta) {
+				ilog(LOG_DEBUG, "Jitter reset due to unknown payload = %d", payload_type);
 				reset_jitter_buffer(jb);
 			}
 			goto end_unlock;
@@ -247,10 +263,10 @@ int buffer_packet(struct media_packet *mp, const str *s) {
 		jb->first_send_ts = ts;
 		jb->first_seq = ntohs(mp->rtp->seq_num);
 		jb->ssrc = ntohl(mp->rtp->ssrc);
-		if(jb->buffer_len > 0)
+		if(jb->rtptime_delta)
 			ret = queue_packet(mp,p);
-		jb->rtptime_delta = 0;
-		jb->next_exp_seq = 0;
+                if(!dtmf)
+			jb->rtptime_delta = 0;
 		jb->drift_mult_factor = 0;
 	}
 
@@ -287,13 +303,23 @@ static void set_jitter_values(struct media_packet *mp) {
 	if(!jb || !mp->rtp)
 		return;
 	int curr_seq = ntohs(mp->rtp->seq_num); 
-	if(jb->next_exp_seq) {
+	int payload_type = (mp->rtp->m_pt & 0x7f);
+	int dtmf = 0;
+	const struct rtp_payload_type *rtp_pt = get_rtp_payload_type(mp, payload_type);
+	if(rtp_pt) {
+		if(rtp_pt->codec_def && rtp_pt->codec_def->dtmf)
+			dtmf = 1;
+	}
+	if(jb->next_exp_seq && !dtmf) {
 		mutex_lock(&jb->lock);
 		if(curr_seq > jb->next_exp_seq) {
-			ilog(LOG_DEBUG, "missing seq exp seq =%d, received seq= %d", jb->next_exp_seq, curr_seq);
-			increment_buffer(jb);
-			jb->cont_frames = 0;
-			jb->cont_miss++;
+			int marker = (mp->rtp->m_pt & 0x80) ? 1 : 0;
+			if(!marker) {
+				ilog(LOG_INFO, "missing seq exp seq =%d, received seq= %d", jb->next_exp_seq, curr_seq);
+				increment_buffer(jb);
+				jb->cont_frames = 0;
+				jb->cont_miss++;
+			}
 		}
 		else if(curr_seq < jb->next_exp_seq) { //Might be duplicate or sequence already crossed
 			jb->cont_frames = 0;
